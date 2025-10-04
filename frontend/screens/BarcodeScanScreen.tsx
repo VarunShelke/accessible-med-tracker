@@ -16,8 +16,12 @@ import {ScanMode, ScannedItem} from '@/types/inventory';
 import {ScanConfirmation} from '@/components/ScanConfirmation';
 import {colors} from '@/styles/colors';
 import {spacing, touchTarget, fontSize} from '@/styles/spacing';
+import {calculateBarcodeCenter, calculateDistance} from '@/utils/barcode';
+import {Point} from 'react-native-vision-camera';
+import {inventoryAPI} from '@/services/api';
 
-const SCAN_COOLDOWN_MS = 1000; // 1 second debounce
+const SCAN_COOLDOWN_MS = 10 * 1000; // 1 second debounce
+const POSITION_THRESHOLD_PX = 100; // Minimum distance to consider a different item
 
 export const BarcodeScanScreen: React.FC = () => {
   const [hasPermission, setHasPermission] = useState(false);
@@ -26,10 +30,14 @@ export const BarcodeScanScreen: React.FC = () => {
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
 
   // Track what's currently in camera frame
-  const lastDetectedRef = useRef<string | null>(null);
+  // const lastDetectedRef = useRef<string | null>(null);
 
-  // Track what was just scanned (with cooldown)
-  const lastScannedRef = useRef<{barcode: string; timestamp: number} | null>(null);
+  // Track what was just scanned (with position and cooldown)
+  const lastScannedRef = useRef<{
+    barcode: string;
+    position: Point;
+    timestamp: number;
+  } | null>(null);
 
   const device = useCameraDevice('back');
 
@@ -43,53 +51,103 @@ export const BarcodeScanScreen: React.FC = () => {
   const codeScanner = useCodeScanner({
     codeTypes: ['qr', 'ean-13', 'code-128', 'code-39', 'upc-a', 'upc-e'],
     onCodeScanned: codes => {
-      console.log('Codes', codes);
       if (codes.length > 0 && mode) {
-        console.log('Corners', codes[0].corners);
         const barcode = codes[0].value;
-        if (barcode) {
-          // Detection change: only proceed if barcode changed in frame
-          if (barcode !== lastDetectedRef.current) {
-            lastDetectedRef.current = barcode;
-            handleBarcodeScan(barcode);
-          }
+        const corners = codes[0].corners;
+
+        if (barcode && corners) {
+          const position = calculateBarcodeCenter(corners);
+
+          // Position-based detection handles everything
+          handleBarcodeScan(barcode, position);
+
+          // OLD: Detection change logic (now commented out)
+          // if (barcode !== lastDetectedRef.current) {
+          //   lastDetectedRef.current = barcode;
+          //   handleBarcodeScan(barcode, position);
+          // }
         }
-      } else {
-        // No barcode in frame - reset detection
-        lastDetectedRef.current = null;
       }
+      // OLD: Reset detection when no barcode
+      // else {
+      //   lastDetectedRef.current = null;
+      // }
     },
   });
 
-  const handleBarcodeScan = (barcode: string) => {
+  const handleBarcodeScan = async (barcode: string, position: Point) => {
     const now = Date.now();
     const lastScanned = lastScannedRef.current;
 
-    // Debounce: prevent scanning same barcode within cooldown period
-    if (
-      lastScanned &&
-      lastScanned.barcode === barcode &&
-      now - lastScanned.timestamp < SCAN_COOLDOWN_MS
-    ) {
-      console.log('Barcode ignored (cooldown):', barcode);
-      return;
-    }
+    // Check if same barcode
+    if (lastScanned && lastScanned.barcode === barcode) {
+      const distance = calculateDistance(position, lastScanned.position);
+      const timeSinceLastScan = now - lastScanned.timestamp;
 
-    // Valid scan - update refs and add to list
-    console.log('Scanned barcode:', barcode);
-    lastScannedRef.current = {barcode, timestamp: now};
-    Vibration.vibrate(50); // Haptic feedback
+      // Same barcode, same position (within threshold) - apply cooldown
+      if (
+        distance < POSITION_THRESHOLD_PX &&
+        timeSinceLastScan < SCAN_COOLDOWN_MS
+      ) {
+        console.log(
+          `Barcode ignored (same position, distance: ${distance.toFixed(0)}px):`,
+          barcode,
+        );
+        return;
+      }
 
-    setScannedItems(prev => {
-      const existing = prev.find(item => item.barcode === barcode);
-      if (existing) {
-        return prev.map(item =>
-          item.barcode === barcode ? {...item, count: item.count + 1} : item,
+      // Same barcode, different position - it's a different physical item!
+      if (distance >= POSITION_THRESHOLD_PX) {
+        console.log(
+          `Different item detected (distance: ${distance.toFixed(0)}px):`,
+          barcode,
         );
       }
-      // TODO: Fetch supply name from database
-      return [...prev, {barcode, name: `Supply ${barcode}`, count: 1}];
-    });
+    }
+
+    // Valid scan - update refs
+    console.log('Scanned barcode:', barcode, 'at position:', position);
+    lastScannedRef.current = {barcode, position, timestamp: now};
+    Vibration.vibrate(50); // Haptic feedback
+
+    // Lookup item in API
+    try {
+      const item = await inventoryAPI.getItemBySku(barcode);
+      console.log('Item lookup by sku', item);
+
+      if (!item) {
+        // Item not found in inventory
+        Alert.alert(
+          'Item Not Found',
+          `Barcode ${barcode} is not in the inventory system.`,
+        );
+        return;
+      }
+
+      // Add to scanned items with API data
+      setScannedItems(prev => {
+        const existing = prev.find(i => i.barcode === barcode);
+        if (existing) {
+          return prev.map(i =>
+            i.barcode === barcode ? {...i, count: i.count + 1} : i,
+          );
+        }
+        return [
+          ...prev,
+          {
+            barcode,
+            name: item.item_name,
+            count: 1,
+            apiId: item.id,
+            currentQuantity: item.quantity,
+            expirationDate: item.expiration_date,
+          },
+        ];
+      });
+    } catch (error) {
+      console.error('Error looking up barcode:', error);
+      Alert.alert('Error', 'Failed to lookup item. Please try again.');
+    }
   };
 
   const startScanning = (scanMode: ScanMode) => {
@@ -97,22 +155,49 @@ export const BarcodeScanScreen: React.FC = () => {
     setScannedItems([]);
     setIsActive(true);
     // Reset refs when starting new scan session
-    lastDetectedRef.current = null;
+    // lastDetectedRef.current = null;
     lastScannedRef.current = null;
   };
 
-  const handleConfirm = () => {
-    // TODO: Save to database
-    Alert.alert(
-      'Success',
-      `${mode === 'add' ? 'Added' : 'Used'} ${scannedItems.reduce(
-        (sum, item) => sum + item.count,
-        0,
-      )} items`,
-    );
-    setScannedItems([]);
-    setIsActive(false);
-    setMode(null);
+  const handleConfirm = async () => {
+    if (scannedItems.length === 0) return;
+
+    try {
+      // Prepare updates for batch API call
+      const updates = scannedItems.map(item => {
+        const delta = mode === 'add' ? item.count : -item.count;
+        const newQuantity = (item.currentQuantity || 0) + delta;
+
+        return {
+          id: item.apiId!,
+          quantity: Math.max(0, newQuantity), // Prevent negative quantities
+        };
+      });
+
+      // Batch update (parallel PUT requests)
+      const {success, errors} = await inventoryAPI.batchUpdateInventory(updates);
+
+      if (errors.length > 0) {
+        console.error('Some updates failed:', errors);
+        Alert.alert(
+          'Partial Success',
+          `${success.length} items updated. ${errors.length} failed.`,
+        );
+      } else {
+        Alert.alert(
+          'Success',
+          `${mode === 'add' ? 'Added' : 'Used'} ${scannedItems.length} item${scannedItems.length === 1 ? '' : 's'}.`,
+        );
+      }
+
+      // Reset state
+      setScannedItems([]);
+      setIsActive(false);
+      setMode(null);
+    } catch (error) {
+      console.error('Confirm error:', error);
+      Alert.alert('Error', 'Failed to update inventory. Please try again.');
+    }
   };
 
   const handleClear = () => {
@@ -181,6 +266,7 @@ export const BarcodeScanScreen: React.FC = () => {
         device={device}
         isActive={isActive}
         codeScanner={codeScanner}
+        // torch='on' 
       />
 
       <View style={styles.overlay}>
