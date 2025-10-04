@@ -2,6 +2,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
+import * as iam from 'aws-cdk-lib/aws-iam';
 import {Construct} from 'constructs';
 
 export class AccessibleMedTrackerStack extends cdk.Stack {
@@ -67,6 +68,30 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             ...lambdaConfig
         });
 
+        // Bedrock analysis Lambda function
+        const bedrockAnalysisFunction = new lambda.Function(this, 'BedrockAnalysisFunction', {
+            functionName: 'bedrock-analysis',
+            handler: 'bedrock_analysis.handler',
+            ...lambdaConfig,
+            environment: {
+                ...lambdaConfig.environment,
+                BEDROCK_MODEL: 'us.anthropic.claude-sonnet-4-20250514-v1:0'
+            }
+        });
+
+        // Bedrock IAM permissions
+        bedrockAnalysisFunction.addToRolePolicy(new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+                'bedrock:InvokeModel',
+                'bedrock:InvokeModelWithResponseStream'
+            ],
+            resources: [
+                'arn:aws:bedrock:us-*::foundation-model/*',
+                `arn:aws:bedrock:us-*:${this.account}:inference-profile/*`
+            ]
+        }));
+
         inventoryTable.grantReadWriteData(createInventoryFunction);
         inventoryTable.grantReadData(getInventoryFunction);
         inventoryTable.grantReadWriteData(deleteInventoryFunction);
@@ -88,5 +113,8 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         const inventoryItem = inventory.addResource('{id}');
         inventoryItem.addMethod('DELETE', new apigateway.LambdaIntegration(deleteInventoryFunction));
         inventoryItem.addMethod('PUT', new apigateway.LambdaIntegration(updateInventoryFunction));
+
+        const analysis = api.root.addResource('analysis');
+        analysis.addMethod('POST', new apigateway.LambdaIntegration(bedrockAnalysisFunction));
     }
 }
