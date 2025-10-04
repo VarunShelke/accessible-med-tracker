@@ -1,4 +1,4 @@
-import React, {useState, useEffect} from 'react';
+import React, {useState, useEffect, useRef} from 'react';
 import {
   View,
   Text,
@@ -17,11 +17,19 @@ import {ScanConfirmation} from '@/components/ScanConfirmation';
 import {colors} from '@/styles/colors';
 import {spacing, touchTarget, fontSize} from '@/styles/spacing';
 
+const SCAN_COOLDOWN_MS = 1000; // 1 second debounce
+
 export const BarcodeScanScreen: React.FC = () => {
   const [hasPermission, setHasPermission] = useState(false);
   const [isActive, setIsActive] = useState(false);
   const [mode, setMode] = useState<ScanMode | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
+
+  // Track what's currently in camera frame
+  const lastDetectedRef = useRef<string | null>(null);
+
+  // Track what was just scanned (with cooldown)
+  const lastScannedRef = useRef<{barcode: string; timestamp: number} | null>(null);
 
   const device = useCameraDevice('back');
 
@@ -35,18 +43,41 @@ export const BarcodeScanScreen: React.FC = () => {
   const codeScanner = useCodeScanner({
     codeTypes: ['qr', 'ean-13', 'code-128', 'code-39', 'upc-a', 'upc-e'],
     onCodeScanned: codes => {
+      console.log('Codes', codes);
       if (codes.length > 0 && mode) {
-        console.log('Codes', codes);
+        console.log('Corners', codes[0].corners);
         const barcode = codes[0].value;
         if (barcode) {
-          handleBarcodeScan(barcode);
+          // Detection change: only proceed if barcode changed in frame
+          if (barcode !== lastDetectedRef.current) {
+            lastDetectedRef.current = barcode;
+            handleBarcodeScan(barcode);
+          }
         }
+      } else {
+        // No barcode in frame - reset detection
+        lastDetectedRef.current = null;
       }
     },
   });
 
   const handleBarcodeScan = (barcode: string) => {
+    const now = Date.now();
+    const lastScanned = lastScannedRef.current;
+
+    // Debounce: prevent scanning same barcode within cooldown period
+    if (
+      lastScanned &&
+      lastScanned.barcode === barcode &&
+      now - lastScanned.timestamp < SCAN_COOLDOWN_MS
+    ) {
+      console.log('Barcode ignored (cooldown):', barcode);
+      return;
+    }
+
+    // Valid scan - update refs and add to list
     console.log('Scanned barcode:', barcode);
+    lastScannedRef.current = {barcode, timestamp: now};
     Vibration.vibrate(50); // Haptic feedback
 
     setScannedItems(prev => {
@@ -65,6 +96,9 @@ export const BarcodeScanScreen: React.FC = () => {
     setMode(scanMode);
     setScannedItems([]);
     setIsActive(true);
+    // Reset refs when starting new scan session
+    lastDetectedRef.current = null;
+    lastScannedRef.current = null;
   };
 
   const handleConfirm = () => {
