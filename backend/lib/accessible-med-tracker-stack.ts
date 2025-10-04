@@ -3,6 +3,9 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as apigateway from 'aws-cdk-lib/aws-apigateway';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as events from 'aws-cdk-lib/aws-events';
+import * as targets from 'aws-cdk-lib/aws-events-targets';
 import {Construct} from 'constructs';
 
 export class AccessibleMedTrackerStack extends cdk.Stack {
@@ -18,6 +21,11 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         inventoryTable.addGlobalSecondaryIndex({
             indexName: 'sku-index',
             partitionKey: {name: 'sku', type: dynamodb.AttributeType.STRING}
+        });
+
+        // SNS Topic for mobile notifications
+        const notificationTopic = new sns.Topic(this, 'InventoryNotificationTopic', {
+            topicName: 'inventory-low-stock-alerts'
         });
 
         // Lambda function configuration
@@ -79,6 +87,26 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             }
         });
 
+        // Inventory monitor Lambda function
+        const inventoryMonitorFunction = new lambda.Function(this, 'InventoryMonitorFunction', {
+            functionName: 'inventory-monitor',
+            handler: 'inventory_monitor.handler',
+            ...lambdaConfig,
+            environment: {
+                ...lambdaConfig.environment,
+                SNS_TOPIC_ARN: notificationTopic.topicArn,
+                GMAIL_USER: 'shelkevarun@gmail.com', // Replace with your Gmail
+                GMAIL_PASSWORD: 'etxbonkbfahclbpb', // Replace with Gmail App Password
+                RECIPIENT_EMAILS: 'vps27@pitt.edu,Varun.Shelke@hotmail.com' // Replace with actual emails
+            }
+        });
+
+        // EventBridge rule for 15-minute schedule
+        const inventoryCheckRule = new events.Rule(this, 'InventoryCheckRule', {
+            schedule: events.Schedule.rate(cdk.Duration.minutes(15))
+        });
+        inventoryCheckRule.addTarget(new targets.LambdaFunction(inventoryMonitorFunction));
+
         // Bedrock IAM permissions
         bedrockAnalysisFunction.addToRolePolicy(new iam.PolicyStatement({
             effect: iam.Effect.ALLOW,
@@ -96,6 +124,10 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         inventoryTable.grantReadData(getInventoryFunction);
         inventoryTable.grantReadWriteData(deleteInventoryFunction);
         inventoryTable.grantReadWriteData(updateInventoryFunction);
+        inventoryTable.grantReadData(inventoryMonitorFunction);
+
+        // Grant SNS publish permissions to inventory monitor
+        notificationTopic.grantPublish(inventoryMonitorFunction);
 
         // API Gateway
         const api = new apigateway.RestApi(this, 'MedTrackerApi', {
