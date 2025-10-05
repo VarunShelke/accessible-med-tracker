@@ -6,6 +6,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sns from 'aws-cdk-lib/aws-sns';
 import * as events from 'aws-cdk-lib/aws-events';
 import * as targets from 'aws-cdk-lib/aws-events-targets';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import {Construct} from 'constructs';
 
 export class AccessibleMedTrackerStack extends cdk.Stack {
@@ -62,7 +63,13 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         const notificationTopic = new sns.Topic(this, 'InventoryNotificationTopic', {
             topicName: 'inventory-low-stock-alerts'
         });
-
+        // S3 bucket for chart storage (private)
+        const chartBucket = new s3.Bucket(this, 'ChartBucket', {
+            bucketName: `med-tracker-charts-${this.account}-${this.region}`,
+            blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+            removalPolicy: cdk.RemovalPolicy.DESTROY,
+            autoDeleteObjects: true
+        });
         // Lambda function configuration
         const lambdaConfig = {
             runtime: lambda.Runtime.PYTHON_3_12,
@@ -147,7 +154,19 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
                 RECIPIENT_EMAILS: 'shelkevarun@gmail.com,mohammed.misran38@gmail.com'
             }
         });
-
+        // Usage chart Lambda function
+        const usageChartFunction = new lambda.Function(this, 'UsageChartFunction', {
+            functionName: 'usage-chart-generator',
+            handler: 'usage_chart_generator.handler',
+            runtime: lambda.Runtime.NODEJS_22_X,
+            architecture: lambda.Architecture.ARM_64,
+            code: lambda.Code.fromAsset('lambda/analytics'),
+            timeout: cdk.Duration.minutes(5),
+            environment: {
+                AUDIT_TABLE_NAME: inventoryAuditTable.tableName,
+                CHART_BUCKET_NAME: chartBucket.bucketName
+            }
+        });
         // EventBridge rule for 15-minute schedule
         const inventoryCheckRule = new events.Rule(this, 'InventoryCheckRule', {
             schedule: events.Schedule.rate(cdk.Duration.minutes(15))
@@ -182,7 +201,9 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
 
         // Grant SNS publish permissions to inventory monitor
         notificationTopic.grantPublish(inventoryMonitorFunction);
-
+        // Grant permissions for usage chart function
+        inventoryAuditTable.grantReadData(usageChartFunction);
+        chartBucket.grantReadWrite(usageChartFunction);
         // API Gateway
         const api = new apigateway.RestApi(this, 'MedTrackerApi', {
             restApiName: 'Med Tracker API',
@@ -205,8 +226,10 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
 
         const analysis = api.root.addResource('analysis');
         analysis.addMethod('POST', new apigateway.LambdaIntegration(bedrockAnalysisFunction));
-
-        // Outputs
+        const analyticsResource = api.root.addResource('analytics');
+        analyticsResource.addMethod('POST', new apigateway.LambdaIntegration(usageChartFunction));
+        const monitorResource = api.root.addResource('monitor');
+        monitorResource.addMethod('POST', new apigateway.LambdaIntegration(inventoryMonitorFunction));        // Outputs
         new cdk.CfnOutput(this, 'InventoryTableName', {
             value: inventoryTable.tableName,
             description: 'Main inventory DynamoDB table name'
@@ -225,6 +248,10 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         new cdk.CfnOutput(this, 'NotificationTopicArn', {
             value: notificationTopic.topicArn,
             description: 'SNS topic ARN for notifications'
+        });
+        new cdk.CfnOutput(this, 'ChartBucketName', {
+            value: chartBucket.bucketName,
+            description: 'S3 bucket name for chart storage'
         });
     }
 }
