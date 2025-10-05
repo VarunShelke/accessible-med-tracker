@@ -12,10 +12,11 @@ class InventoryItem(BaseModel):
     quantity: int = Field(ge=0)
     expiration_date: date
     storage_location: str = Field(min_length=1)
+    category: str = Field(min_length=1)
     created_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: Optional[datetime] = Field(default_factory=lambda: datetime.now(timezone.utc))
 
-    @field_validator('item_name', 'storage_location')
+    @field_validator('item_name', 'storage_location', 'category')
     @classmethod
     def validate_strings(cls, v):
         if not v.strip():

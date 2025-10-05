@@ -25,6 +25,15 @@ def get_by_sku(sku):
     return response['Items']
 
 
+def get_by_category(category):
+    response = table.query(
+        IndexName='category-index',
+        KeyConditionExpression='category = :category',
+        ExpressionAttributeValues={':category': category}
+    )
+    return response['Items']
+
+
 def get_all():
     response = table.scan()
     return response['Items']
@@ -38,6 +47,8 @@ def handler(event, context):
             items = get_by_id(params['id'])
         elif params.get('sku'):
             items = get_by_sku(params['sku'])
+        elif params.get('category'):
+            items = get_by_category(params['category'])
         else:
             items = get_all()
 

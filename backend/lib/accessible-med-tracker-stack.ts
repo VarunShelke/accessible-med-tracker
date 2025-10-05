@@ -23,6 +23,11 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             partitionKey: {name: 'sku', type: dynamodb.AttributeType.STRING}
         });
 
+        inventoryTable.addGlobalSecondaryIndex({
+            indexName: 'category-index',
+            partitionKey: {name: 'category', type: dynamodb.AttributeType.STRING}
+        });
+
         // SNS Topic for mobile notifications
         const notificationTopic = new sns.Topic(this, 'InventoryNotificationTopic', {
             topicName: 'inventory-low-stock-alerts'
