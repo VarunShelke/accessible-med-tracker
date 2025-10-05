@@ -13,6 +13,7 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         super(scope, id, props);
 
         const inventoryTable = new dynamodb.Table(this, 'med-tracker-inventory', {
+            tableName: 'med_tracker_inventory',
             partitionKey: {name: 'id', type: dynamodb.AttributeType.STRING},
             billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
             removalPolicy: cdk.RemovalPolicy.DESTROY
@@ -21,6 +22,40 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         inventoryTable.addGlobalSecondaryIndex({
             indexName: 'sku-index',
             partitionKey: {name: 'sku', type: dynamodb.AttributeType.STRING}
+        });
+
+        inventoryTable.addGlobalSecondaryIndex({
+            indexName: 'category-index',
+            partitionKey: {name: 'category', type: dynamodb.AttributeType.STRING}
+        });
+
+        const inventoryAuditTable = new dynamodb.Table(this, 'inventory-audit', {
+            tableName: 'med_tracker_inventory_audit',
+            partitionKey: {name: 'audit_date', type: dynamodb.AttributeType.STRING},
+            sortKey: {name: 'id', type: dynamodb.AttributeType.STRING},
+            billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+            removalPolicy: cdk.RemovalPolicy.DESTROY
+        });
+
+        // GSI for querying by SKU with timestamp (for per-SKU stock level analytics)
+        inventoryAuditTable.addGlobalSecondaryIndex({
+            indexName: 'sku-timestamp-index',
+            partitionKey: {name: 'sku', type: dynamodb.AttributeType.STRING},
+            sortKey: {name: 'timestamp', type: dynamodb.AttributeType.STRING}
+        });
+
+        // GSI for querying by category with timestamp (for category analytics)
+        inventoryAuditTable.addGlobalSecondaryIndex({
+            indexName: 'category-timestamp-index',
+            partitionKey: {name: 'category', type: dynamodb.AttributeType.STRING},
+            sortKey: {name: 'timestamp', type: dynamodb.AttributeType.STRING}
+        });
+
+        // GSI for querying by inventory_item_id with timestamp (for item history)
+        inventoryAuditTable.addGlobalSecondaryIndex({
+            indexName: 'inventory_item_id-timestamp-index',
+            partitionKey: {name: 'inventory_item_id', type: dynamodb.AttributeType.STRING},
+            sortKey: {name: 'timestamp', type: dynamodb.AttributeType.STRING}
         });
 
         // SNS Topic for mobile notifications
@@ -44,7 +79,8 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             }),
             timeout: cdk.Duration.minutes(10),
             environment: {
-                TABLE_NAME: inventoryTable.tableName
+                TABLE_NAME: inventoryTable.tableName,
+                AUDIT_TABLE_NAME: inventoryAuditTable.tableName
             }
         };
 
@@ -95,9 +131,9 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             environment: {
                 ...lambdaConfig.environment,
                 SNS_TOPIC_ARN: notificationTopic.topicArn,
-                GMAIL_USER: 'shelkevarun@gmail.com', // Replace with your Gmail
-                GMAIL_PASSWORD: 'etxbonkbfahclbpb', // Replace with Gmail App Password
-                RECIPIENT_EMAILS: 'vps27@pitt.edu,Varun.Shelke@hotmail.com' // Replace with actual emails
+                GMAIL_USER: 'shelkevarun@gmail.com',
+                GMAIL_PASSWORD: 'etxbonkbfahclbpb',
+                RECIPIENT_EMAILS: 'shelkevarun@gmail.com,mohammed.misran38@gmail.com'
             }
         });
 
@@ -127,6 +163,11 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         inventoryTable.grantReadWriteData(updateInventoryFunction);
         inventoryTable.grantReadData(inventoryMonitorFunction);
 
+        // Grant audit table permissions
+        inventoryAuditTable.grantWriteData(createInventoryFunction);
+        inventoryAuditTable.grantWriteData(updateInventoryFunction);
+        inventoryAuditTable.grantWriteData(deleteInventoryFunction);
+
         // Grant SNS publish permissions to inventory monitor
         notificationTopic.grantPublish(inventoryMonitorFunction);
 
@@ -149,5 +190,26 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
 
         const analysis = api.root.addResource('analysis');
         analysis.addMethod('POST', new apigateway.LambdaIntegration(bedrockAnalysisFunction));
+
+        // Outputs
+        new cdk.CfnOutput(this, 'InventoryTableName', {
+            value: inventoryTable.tableName,
+            description: 'Main inventory DynamoDB table name'
+        });
+
+        new cdk.CfnOutput(this, 'InventoryAuditTableName', {
+            value: inventoryAuditTable.tableName,
+            description: 'Inventory audit DynamoDB table name'
+        });
+
+        new cdk.CfnOutput(this, 'ApiGatewayUrl', {
+            value: api.url,
+            description: 'API Gateway endpoint URL'
+        });
+
+        new cdk.CfnOutput(this, 'NotificationTopicArn', {
+            value: notificationTopic.topicArn,
+            description: 'SNS topic ARN for notifications'
+        });
     }
 }

@@ -116,8 +116,6 @@ def get_operation_from_bedrock(transcribed_text):
 
             # Extract JSON from response
             result = extract_json_from_response(response_text)
-            # Parse JSON response
-            # result = json.loads(extracted_json)
 
             # Validate items array structure
             if "items" in result and isinstance(result["items"], list) and len(result["items"]) > 0:
