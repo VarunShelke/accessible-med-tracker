@@ -1,4 +1,5 @@
 import json
+import re
 import os
 from datetime import date, datetime, timezone
 
@@ -42,7 +43,19 @@ def handler(event, context):
         if 'category' in body:
             updates.append("category = :category")
             expression_values[':category'] = body['category'].strip()
+        if 'supplier_name' in body:
+            updates.append("supplier_name = :supplier_name")
+            expression_values[':supplier_name'] = body['supplier_name'].strip() if body['supplier_name'] else None
 
+        if 'supplier_phone' in body:
+            phone = body['supplier_phone']
+            if phone and not re.match(r'^\+[1-9]\d{1,14}$', phone):
+                return {
+                    'statusCode': 400,
+                    'body': json.dumps({'error': 'Phone number must be in E164 format (e.g., +1234567890)'})
+                }
+            updates.append("supplier_phone = :supplier_phone")
+            expression_values[':supplier_phone'] = phone
         if updates:
             update_expression += ", " + ", ".join(updates)
 
@@ -92,6 +105,8 @@ def handler(event, context):
                     'expiration_date': item['expiration_date'],
                     'storage_location': item['storage_location'],
                     'category': item.get('category'),
+                    'supplier_name': item.get('supplier_name'),
+                    'supplier_phone': item.get('supplier_phone'),
                     'created_at': item.get('created_at'),
                     'updated_at': item['updated_at']
                 }
