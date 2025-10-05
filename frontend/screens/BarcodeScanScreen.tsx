@@ -69,7 +69,7 @@ export const BarcodeScanScreen: React.FC = () => {
         // Item not found in inventory
         Alert.alert(
           'Item Not Found',
-          `Barcode ${barcode} is not in the inventory system.`,
+          `Product ${barcode} is not in the inventory system.`,
         );
         return;
       }

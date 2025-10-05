@@ -1,14 +1,14 @@
 import apiClient from '@/services/api';
 import { handleAxiosError } from '@/services/utils';
-import { AllInventory, InventoryItem, UpdateInventoryRequest } from '@/types/api';
+import { AllInventory, InventoryItem, UpdateInventoryRequest, QueryInventoryParams } from '@/types/api';
 
 class InventoryAPI {
   /**
    * Fetch all inventory items
    */
-  async getAllInventory(): Promise<InventoryItem[]> {
+  async getAllInventory(params?: QueryInventoryParams): Promise<InventoryItem[]> {
     try {
-      const response = await apiClient.get<AllInventory>('/inventory');
+      const response = await apiClient.get<AllInventory>('/inventory', { params });
       return response.data.inventory;
     } catch (error) {
       console.error('Get all inventory error:', error);
@@ -18,33 +18,17 @@ class InventoryAPI {
 
   /**
    * Lookup item by SKU (barcode)
-   * TODO: Replace with actual API once backend implements GET /inventory/sku/{sku}
    */
   async getItemBySku(sku: string): Promise<InventoryItem | null> {
-    // Mock implementation for now
     console.log('Looking up SKU:', sku);
 
-    const allItems = await this.getAllInventory();
-    const existingItem = allItems.find(item => item.sku === sku);
-    
-    if (existingItem) {
-      return existingItem;
+    const result = await this.getAllInventory({ sku });
+    if (result.length > 0) {
+      return result[0];
     }
 
     // Return null if not found (simulates 404)
     return null;
-
-    // TODO: Replace with actual API call:
-    // try {
-    //   const response = await apiClient.get<InventoryItem>(`/inventory/sku/${sku}`);
-    //   return response.data;
-    // } catch (error) {
-    //   if (axios.isAxiosError(error) && error.response?.status === 404) {
-    //     return null;
-    //   }
-    //   console.error('Get item by SKU error:', error);
-    //   throw handleAxiosError(error);
-    // }
   }
 
   /**
