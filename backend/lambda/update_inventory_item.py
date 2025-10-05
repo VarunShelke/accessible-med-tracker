@@ -4,6 +4,8 @@ from datetime import date, datetime, timezone
 
 import boto3
 
+from utils.audit_helper import log_audit
+
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['TABLE_NAME'])
 
@@ -44,6 +46,16 @@ def handler(event, context):
         if updates:
             update_expression += ", " + ", ".join(updates)
 
+        # Get item before update for audit logging
+        get_response = table.get_item(Key={'id': item_id})
+        if 'Item' not in get_response:
+            return {
+                'statusCode': 404,
+                'body': json.dumps({'error': 'Item not found'})
+            }
+
+        old_item = get_response['Item']
+
         # Update item
         response = table.update_item(
             Key={'id': item_id},
@@ -55,6 +67,19 @@ def handler(event, context):
         )
 
         item = response['Attributes']
+
+        # Log UPDATE audit
+        log_audit(
+            action='UPDATE',
+            inventory_item_id=item_id,
+            sku=item['sku'],
+            item_name=item['item_name'],
+            category=item.get('category', ''),
+            quantity_before=int(old_item.get('quantity', 0)),
+            quantity_after=int(item['quantity']),
+            storage_location=item['storage_location'],
+            expiration_date=item.get('expiration_date')
+        )
         return {
             'statusCode': 200,
             'body': json.dumps({

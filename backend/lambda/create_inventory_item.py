@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import boto3
 
 from models.inventory_item import InventoryItem
+from utils.audit_helper import log_audit
 
 dynamodb = boto3.resource('dynamodb')
 table = dynamodb.Table(os.environ['TABLE_NAME'])
@@ -62,6 +63,19 @@ def handler(event, context):
             # Get updated item
             updated_item = table.get_item(Key={'id': existing_item['id']})['Item']
 
+            # Log RESTOCK audit
+            log_audit(
+                action='RESTOCK',
+                inventory_item_id=existing_item['id'],
+                sku=updated_item['sku'],
+                item_name=updated_item['item_name'],
+                category=updated_item['category'],
+                quantity_before=existing_item['quantity'],
+                quantity_after=int(updated_item['quantity']),
+                storage_location=updated_item['storage_location'],
+                expiration_date=updated_item.get('expiration_date')
+            )
+
             return {
                 'statusCode': 200,
                 'body': json.dumps({
@@ -95,6 +109,19 @@ def handler(event, context):
             }
 
             table.put_item(Item=item_data)
+
+            # Log CREATE audit
+            log_audit(
+                action='CREATE',
+                inventory_item_id=item_data['id'],
+                sku=item_data['sku'],
+                item_name=item_data['item_name'],
+                category=item_data['category'],
+                quantity_before=0,
+                quantity_after=item_data['quantity'],
+                storage_location=item_data['storage_location'],
+                expiration_date=item_data['expiration_date']
+            )
 
             return {
                 'statusCode': 201,
