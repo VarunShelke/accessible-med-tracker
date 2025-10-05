@@ -42,7 +42,7 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
                     ]
                 }
             }),
-            timeout: cdk.Duration.minutes(2),
+            timeout: cdk.Duration.minutes(10),
             environment: {
                 TABLE_NAME: inventoryTable.tableName
             }
@@ -120,6 +120,7 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             ]
         }));
 
+        inventoryTable.grantReadData(bedrockAnalysisFunction);
         inventoryTable.grantReadWriteData(createInventoryFunction);
         inventoryTable.grantReadData(getInventoryFunction);
         inventoryTable.grantReadWriteData(deleteInventoryFunction);
