@@ -16,12 +16,7 @@ import {ScanMode, ScannedItem} from '@/types/inventory';
 import {ScanConfirmation} from '@/components/ScanConfirmation';
 import {colors} from '@/styles/colors';
 import {spacing, touchTarget, fontSize} from '@/styles/spacing';
-import {calculateBarcodeCenter, calculateDistance} from '@/utils/barcode';
-import {Point} from 'react-native-vision-camera';
 import {inventoryAPI} from '@/services/api';
-
-const SCAN_COOLDOWN_MS = 10 * 1000; // 1 second debounce
-const POSITION_THRESHOLD_PX = 100; // Minimum distance to consider a different item
 
 export const BarcodeScanScreen: React.FC = () => {
   const [hasPermission, setHasPermission] = useState(false);
@@ -29,15 +24,8 @@ export const BarcodeScanScreen: React.FC = () => {
   const [mode, setMode] = useState<ScanMode | null>(null);
   const [scannedItems, setScannedItems] = useState<ScannedItem[]>([]);
 
-  // Track what's currently in camera frame
-  // const lastDetectedRef = useRef<string | null>(null);
-
-  // Track what was just scanned (with position and cooldown)
-  const lastScannedRef = useRef<{
-    barcode: string;
-    position: Point;
-    timestamp: number;
-  } | null>(null);
+  // Track last scanned barcode to prevent duplicates
+  const lastScannedRef = useRef<string | null>(null);
 
   const device = useCameraDevice('back');
 
@@ -53,61 +41,23 @@ export const BarcodeScanScreen: React.FC = () => {
     onCodeScanned: codes => {
       if (codes.length > 0 && mode) {
         const barcode = codes[0].value;
-        const corners = codes[0].corners;
 
-        if (barcode && corners) {
-          const position = calculateBarcodeCenter(corners);
-
-          // Position-based detection handles everything
-          handleBarcodeScan(barcode, position);
-
-          // OLD: Detection change logic (now commented out)
-          // if (barcode !== lastDetectedRef.current) {
-          //   lastDetectedRef.current = barcode;
-          //   handleBarcodeScan(barcode, position);
-          // }
+        if (barcode) {
+          // Only scan if it's a new barcode (not the last scanned one)
+          if (barcode !== lastScannedRef.current) {
+            lastScannedRef.current = barcode;
+            handleBarcodeScan(barcode);
+          }
         }
+      } else {
+        // Reset when no barcode in frame
+        lastScannedRef.current = null;
       }
-      // OLD: Reset detection when no barcode
-      // else {
-      //   lastDetectedRef.current = null;
-      // }
     },
   });
 
-  const handleBarcodeScan = async (barcode: string, position: Point) => {
-    const now = Date.now();
-    const lastScanned = lastScannedRef.current;
-
-    // Check if same barcode
-    if (lastScanned && lastScanned.barcode === barcode) {
-      const distance = calculateDistance(position, lastScanned.position);
-      const timeSinceLastScan = now - lastScanned.timestamp;
-
-      // Same barcode, same position (within threshold) - apply cooldown
-      if (
-        distance < POSITION_THRESHOLD_PX &&
-        timeSinceLastScan < SCAN_COOLDOWN_MS
-      ) {
-        console.log(
-          `Barcode ignored (same position, distance: ${distance.toFixed(0)}px):`,
-          barcode,
-        );
-        return;
-      }
-
-      // Same barcode, different position - it's a different physical item!
-      if (distance >= POSITION_THRESHOLD_PX) {
-        console.log(
-          `Different item detected (distance: ${distance.toFixed(0)}px):`,
-          barcode,
-        );
-      }
-    }
-
-    // Valid scan - update refs
-    console.log('Scanned barcode:', barcode, 'at position:', position);
-    lastScannedRef.current = {barcode, position, timestamp: now};
+  const handleBarcodeScan = async (barcode: string) => {
+    console.log('Scanned barcode:', barcode);
     Vibration.vibrate(50); // Haptic feedback
 
     // Lookup item in API
@@ -124,14 +74,15 @@ export const BarcodeScanScreen: React.FC = () => {
         return;
       }
 
-      // Add to scanned items with API data
+      // Check if already scanned - if so, ignore (user will manually update count)
       setScannedItems(prev => {
         const existing = prev.find(i => i.barcode === barcode);
         if (existing) {
-          return prev.map(i =>
-            i.barcode === barcode ? {...i, count: i.count + 1} : i,
-          );
+          // Already in list - don't add again, user will update count manually
+          Alert.alert('Already Scanned', `${item.item_name} is already in the list. Update the count manually.`);
+          return prev;
         }
+        // Add new item with count of 1
         return [
           ...prev,
           {
@@ -154,8 +105,7 @@ export const BarcodeScanScreen: React.FC = () => {
     setMode(scanMode);
     setScannedItems([]);
     setIsActive(true);
-    // Reset refs when starting new scan session
-    // lastDetectedRef.current = null;
+    // Reset ref when starting new scan session
     lastScannedRef.current = null;
   };
 

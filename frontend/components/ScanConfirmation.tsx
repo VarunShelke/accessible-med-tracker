@@ -29,8 +29,8 @@ export const ScanConfirmation: React.FC<ScanConfirmationProps> = ({
   onClear,
   onEdit,
 }) => {
-  const totalCount = items.reduce((sum, item) => sum + item.count, 0);
   const actionText = mode === 'add' ? 'Add' : 'Use';
+  const itemCountText = `${actionText} ${items.length} ${items.length === 1 ? 'Item' : 'Items'}`;
   const buttonColor = mode === 'add' ? colors.success : colors.danger;
 
   const handleCountChange = (barcode: string, value: string, currentQuantity: number) => {
@@ -66,7 +66,7 @@ export const ScanConfirmation: React.FC<ScanConfirmationProps> = ({
         <View style={styles.tableHeader}>
           <Text style={[styles.headerCell, styles.nameColumn]}>Item Name</Text>
           <Text style={[styles.headerCell, styles.quantityColumn]}>Current</Text>
-          <Text style={[styles.headerCell, styles.changeColumn]}>Add Stock</Text>
+          <Text style={[styles.headerCell, styles.changeColumn]}>{mode === 'add' ? 'Add' : 'Use'} Stock</Text>
         </View>
 
         {/* Table Body */}
@@ -105,6 +105,7 @@ export const ScanConfirmation: React.FC<ScanConfirmationProps> = ({
                   handleCountChange(item.barcode, value, item.currentQuantity)
                 }
                 keyboardType="number-pad"
+                returnKeyType='done'
                 selectTextOnFocus
                 accessible={true}
                 accessibilityLabel={`Change quantity for ${item.name}, current value ${item.count}`}
@@ -129,11 +130,9 @@ export const ScanConfirmation: React.FC<ScanConfirmationProps> = ({
             style={[styles.confirmButton, {backgroundColor: buttonColor}]}
             onPress={onConfirm}
             accessible={true}
-            accessibilityLabel={`${actionText} ${totalCount} items to inventory`}
+            accessibilityLabel={`${itemCountText} to inventory`}
             accessibilityRole="button">
-            <Text style={styles.confirmButtonText}>
-              {actionText} {items.length} {items.length === 1 ? 'Item' : 'Items'}
-            </Text>
+            <Text style={styles.confirmButtonText}>{itemCountText}</Text>
           </TouchableOpacity>
         </View>
       </View>
