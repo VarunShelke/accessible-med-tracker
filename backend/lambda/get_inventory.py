@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date
+from datetime import date, datetime
 
 import boto3
 from botocore.exceptions import ClientError
@@ -45,6 +45,10 @@ def handler(event, context):
         for item in items:
             if 'expiration_date' in item:
                 item['expiration_date'] = date.fromisoformat(item['expiration_date'])
+            if 'created_at' in item:
+                item['created_at'] = datetime.fromisoformat(item['created_at'])
+            if 'updated_at' in item:
+                item['updated_at'] = datetime.fromisoformat(item['updated_at'])
 
             item = inventory_item.InventoryItem(**item)
             inventory_items.append(item.model_dump(mode='json'))

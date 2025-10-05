@@ -1,6 +1,6 @@
 import json
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 
 import boto3
 
@@ -14,8 +14,8 @@ def handler(event, context):
         body = json.loads(event['body'])
         
         # Build update expression
-        update_expression = "SET "
-        expression_values = {}
+        update_expression = "SET updated_at = :updated_at"
+        expression_values = {':updated_at': datetime.now(timezone.utc).isoformat()}
         expression_names = {}
         updates = []
         
@@ -37,13 +37,8 @@ def handler(event, context):
             updates.append("expiration_date = :expiration_date")
             expression_values[':expiration_date'] = exp_date.isoformat()
         
-        if not updates:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'No valid fields to update'})
-            }
-        
-        update_expression += ", ".join(updates)
+        if updates:
+            update_expression += ", " + ", ".join(updates)
         
         # Update item
         response = table.update_item(
@@ -66,7 +61,9 @@ def handler(event, context):
                     'item_name': item['item_name'],
                     'quantity': int(item['quantity']),
                     'expiration_date': item['expiration_date'],
-                    'storage_location': item['storage_location']
+                    'storage_location': item['storage_location'],
+                    'created_at': item.get('created_at'),
+                    'updated_at': item['updated_at']
                 }
             })
         }
