@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -8,6 +9,23 @@ import boto3
 
 dynamodb = boto3.resource('dynamodb')
 sns = boto3.client('sns')
+
+
+def format_phone_number(phone):
+    """Format E164 phone number for better readability"""
+    if not phone:
+        return phone
+    
+    # For US/Canada numbers (+1XXXXXXXXXX)
+    if phone.startswith('+1') and len(phone) == 12:
+        return f"+1 ({phone[2:5]}) {phone[5:8]}-{phone[8:]}"
+    
+    # For other countries, just add spaces every 3-4 digits
+    clean_phone = phone[1:]  # Remove +
+    if len(clean_phone) >= 10:
+        return f"+{clean_phone[:2]} {clean_phone[2:5]} {clean_phone[5:8]} {clean_phone[8:]}"
+    
+    return phone  # Return original if can't format
 
 
 def create_html_email(low_stock_items):
@@ -35,16 +53,21 @@ def create_html_email(low_stock_items):
                     <tr style="background-color: #f5f5f5;">
                         <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Item Name</th>
                         <th style="border: 1px solid #ddd; padding: 12px; text-align: center;">Current Stock</th>
+                        <th style="border: 1px solid #ddd; padding: 12px; text-align: left;">Supplier</th>
                     </tr>
                 </thead>
                 <tbody>
     """
 
     for item in low_stock_items:
+        formatted_phone = format_phone_number(item.get('supplier_phone'))
+        supplier_info = f"{item.get('supplier_name', '')}<br><a href=\"tel:{item.get('supplier_phone', '')}\" style=\"color: #1976d2; text-decoration: none;\">{formatted_phone}</a>" if item.get('supplier_phone') else item.get('supplier_name', '')
+        
         html_body += f"""
                     <tr>
                         <td style="border: 1px solid #ddd; padding: 12px;">{item['item_name']}</td>
                         <td style="border: 1px solid #ddd; padding: 12px; text-align: center; color: #d32f2f; font-weight: bold;">{item['quantity']}</td>
+                        <td style="border: 1px solid #ddd; padding: 12px;">{supplier_info}</td>
                     </tr>
         """
 
@@ -76,12 +99,24 @@ def send_email_notification(low_stock_items):
     html_body = create_html_email(low_stock_items)
 
     # Create plain text version
-    item_list = '\n'.join([f"- {item['item_name']}: {item['quantity']} remaining" for item in low_stock_items])
+    item_list = []
+    for item in low_stock_items:
+        supplier_text = ""
+        if item.get('supplier_name') or item.get('supplier_phone'):
+            supplier_parts = []
+            if item.get('supplier_name'):
+                supplier_parts.append(item['supplier_name'])
+            if item.get('supplier_phone'):
+                supplier_parts.append(format_phone_number(item['supplier_phone']))
+            supplier_text = f" (Supplier: {' - '.join(supplier_parts)})"
+        
+        item_list.append(f"- {item['item_name']}: {item['quantity']} remaining{supplier_text}")
+    
     text_body = f"""Low Stock Alert
 
 {len(low_stock_items)} items are currently low in stock:
 
-{item_list}
+{chr(10).join(item_list)}
 
 Please restock these items as soon as possible.
 

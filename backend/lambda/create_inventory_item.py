@@ -54,6 +54,14 @@ def handler(event, context):
                 update_expression += ', category = :category'
                 expression_values[':category'] = new_item.category
 
+            if body.get('supplier_name'):
+                update_expression += ', supplier_name = :supplier_name'
+                expression_values[':supplier_name'] = new_item.supplier_name
+
+            if body.get('supplier_phone'):
+                update_expression += ', supplier_phone = :supplier_phone'
+                expression_values[':supplier_phone'] = new_item.supplier_phone
+
             table.update_item(
                 Key={'id': existing_item['id']},
                 UpdateExpression=update_expression,
@@ -104,6 +112,8 @@ def handler(event, context):
                 'expiration_date': new_item.expiration_date.isoformat(),
                 'storage_location': new_item.storage_location,
                 'category': new_item.category,
+                'supplier_name': new_item.supplier_name,
+                'supplier_phone': new_item.supplier_phone,
                 'created_at': now,
                 'updated_at': now
             }
@@ -135,6 +145,8 @@ def handler(event, context):
                         'expiration_date': item_data['expiration_date'],
                         'storage_location': item_data['storage_location'],
                         'category': item_data['category'],
+                        'supplier_name': item_data['supplier_name'],
+                        'supplier_phone': item_data['supplier_phone'],
                         'created_at': item_data['created_at'],
                         'updated_at': item_data['updated_at']
                     }
