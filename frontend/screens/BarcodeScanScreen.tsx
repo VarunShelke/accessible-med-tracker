@@ -16,7 +16,7 @@ import {ScanMode, ScannedItem} from '@/types/inventory';
 import {ScanConfirmation} from '@/components/ScanConfirmation';
 import {colors} from '@/styles/colors';
 import {spacing, touchTarget, fontSize} from '@/styles/spacing';
-import {inventoryAPI} from '@/services/api';
+import inventoryAPI from '@/services/inventory-api';
 
 export const BarcodeScanScreen: React.FC = () => {
   const [hasPermission, setHasPermission] = useState(false);

@@ -1,10 +1,11 @@
 import React from 'react';
-import {SafeAreaView, StyleSheet} from 'react-native';
+import {StyleSheet} from 'react-native';
+import {SafeAreaView} from 'react-native-safe-area-context';
 import {BarcodeScanScreen} from './screens/BarcodeScanScreen';
 
 export default function App() {
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={['top']}>
       <BarcodeScanScreen />
     </SafeAreaView>
   );
