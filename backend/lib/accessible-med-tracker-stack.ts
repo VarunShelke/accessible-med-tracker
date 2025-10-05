@@ -98,6 +98,17 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
             ...lambdaConfig
         });
 
+        // Get low inventory Lambda function
+        const getLowInventoryFunction = new lambda.Function(this, 'GetLowInventoryFunction', {
+            functionName: 'get-low-inventory',
+            handler: 'get_low_inventory.handler',
+            ...lambdaConfig,
+            environment: {
+                ...lambdaConfig.environment,
+                LOW_INVENTORY_THRESHOLD: '15'
+            }
+        });
+
         // Delete inventory Lambda function
         const deleteInventoryFunction = new lambda.Function(this, 'DeleteInventoryFunction', {
             functionName: 'delete-inventory-item',
@@ -159,6 +170,7 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         inventoryTable.grantReadData(bedrockAnalysisFunction);
         inventoryTable.grantReadWriteData(createInventoryFunction);
         inventoryTable.grantReadData(getInventoryFunction);
+        inventoryTable.grantReadData(getLowInventoryFunction);
         inventoryTable.grantReadWriteData(deleteInventoryFunction);
         inventoryTable.grantReadWriteData(updateInventoryFunction);
         inventoryTable.grantReadData(inventoryMonitorFunction);
@@ -183,6 +195,9 @@ export class AccessibleMedTrackerStack extends cdk.Stack {
         const inventory = api.root.addResource('inventory');
         inventory.addMethod('GET', new apigateway.LambdaIntegration(getInventoryFunction));
         inventory.addMethod('POST', new apigateway.LambdaIntegration(createInventoryFunction));
+
+        const lowStock = inventory.addResource('low-stock');
+        lowStock.addMethod('GET', new apigateway.LambdaIntegration(getLowInventoryFunction));
 
         const inventoryItem = inventory.addResource('{id}');
         inventoryItem.addMethod('DELETE', new apigateway.LambdaIntegration(deleteInventoryFunction));
