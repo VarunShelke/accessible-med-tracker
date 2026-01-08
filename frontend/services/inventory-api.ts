@@ -1,6 +1,6 @@
 import apiClient from '@/services/api';
 import { handleAxiosError } from '@/services/utils';
-import { AllInventory, InventoryItem, UpdateInventoryRequest, QueryInventoryParams } from '@/types/api';
+import { AllInventory, InventoryItem, UpdateInventoryRequest, QueryInventoryParams, UpdateInventoryResponse } from '@/types/api';
 
 class InventoryAPI {
   /**
@@ -12,6 +12,19 @@ class InventoryAPI {
       return response.data.inventory;
     } catch (error) {
       console.error('Get all inventory error:', error);
+      throw handleAxiosError(error);
+    }
+  }
+
+  /**
+   * Fetch low stock and near expiration items
+   */
+  async getLowStockInventory(): Promise<InventoryItem[]> {
+    try {
+      const response = await apiClient.get<InventoryItem[]>('/inventory/low-stock');
+      return response.data;
+    } catch (error) {
+      console.error('Get low stock inventory error:', error);
       throw handleAxiosError(error);
     }
   }
@@ -36,8 +49,8 @@ class InventoryAPI {
    */
   async updateInventory(id: string, data: UpdateInventoryRequest): Promise<InventoryItem> {
     try {
-      const response = await apiClient.put<InventoryItem>(`/inventory/${id}`, data);
-      return response.data;
+      const response = await apiClient.put<UpdateInventoryResponse>(`/inventory/${id}`, data);
+      return response.data.item;
     } catch (error) {
       console.error('Update inventory error:', error);
       throw handleAxiosError(error);
