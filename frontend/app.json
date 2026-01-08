@@ -16,6 +16,8 @@
       "supportsTablet": true,
       "infoPlist": {
         "NSCameraUsageDescription": "We need permission to access your camera.",
+        "NSMicrophoneUsageDescription": "We need microphone access for voice commands.",
+        "NSSpeechRecognitionUsageDescription": "We need speech recognition to process voice commands.",
         "ITSAppUsesNonExemptEncryption": false
       },
       "bundleIdentifier": "me.mohammedmisran.accessiblemedtracker"
@@ -28,7 +30,8 @@
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "permissions": [
-        "android.permission.CAMERA"
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ],
       "package": "me.mohammedmisran.accessiblemedtracker"
     },
